@@ -53,11 +53,11 @@ def get_address(session, subaccount, mnemonic, rpc):
     return user_address
 
 def user_sign(session, subaccount, pset, blinding_nonces_str):
-    utxos = get_utxos(sesssion, subaccount)
-    details = {"pset": pset, "utxos": utxos}
-    if ',' in blinding_nonces_str:
+    utxos = get_utxos(session, subaccount)
+    details = {"psbt": pset, "utxos": utxos}
+    if blinding_nonces_str:
         details['blinding_nonces'] = blinding_nonces_str.split(',')
-    return s.sign_psbt(details)
+    return session.sign_psbt(details).resolve()
 
 # copied from TODO
 class RPCHost(object):
@@ -97,13 +97,13 @@ def sat2btc(sat):
 BTC_ASSET_ID = "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49"
 
 def create_pset(rpc, inputs, outputs):
-    # TODO: return blinding nonces
     inputs_ = []
     for i in inputs:
         txid, vout = i.split(':')
         inputs_.append({"txid": txid, "vout": int(vout), "sequence": 0xffffffff})
 
     outputs_ = []
+    blinding_private_keys = []
     for o in outputs:
         t = o.split(':')
         if len(t) == 2:
@@ -111,25 +111,42 @@ def create_pset(rpc, inputs, outputs):
             asset = BTC_ASSET_ID
         else:
             address, satoshi, asset = t
+
         satoshi = int(satoshi)
         o_ = {address: sat2btc(satoshi), 'asset': asset}
+        bpk = None
         if address != 'fee':
+            # To be able to return the blining nonces,
+            # all output addresses must have private blinding keys known by the node
+            # Those will later be used to get the blinding nonces.
+            bpk = bytes.fromhex(rpc.call('dumpblindingkey', address))
             o_['blinder_index'] = 0
         outputs_.append(o_)
+        blinding_private_keys.append(bpk)
 
     psbt = rpc.call('createpsbt', inputs_, outputs_)
     # blindpsbt
     sign = False
     psbt = rpc.call('walletprocesspsbt', psbt, sign)
+
+    psbt_decoded = rpc.call('decodepsbt', psbt['psbt'])
+    blinding_nonces = []
+    for bpk, o in zip(blinding_private_keys, psbt_decoded['outputs']):
+        bn = ''
+        if bpk:
+            ecdh_pubkey = bytes.fromhex(o['ecdh_pubkey'])
+            bn = wally.sha256(wally.ecdh(ecdh_pubkey, bpk)).hex()
+        blinding_nonces.append(bn)
+    psbt['blinding_nonces'] = ','.join(blinding_nonces)
     return psbt
 
 def node_sign(rpc, pset):
     return rpc.call('walletprocesspsbt', pset)
 
-def combine_pset(rpc, pset):
+def combine(rpc, pset):
     return rpc.call('combinepsbt', pset) # list
 
-def finalize_pset(rpc, pset):
+def finalize(rpc, pset):
     ret = rpc.call('finalizepsbt', pset)
     assert ret['complete']
     tx = ret['hex']
@@ -137,7 +154,7 @@ def finalize_pset(rpc, pset):
     assert all(e['allowed'] for e in ret)
     return tx
 
-def sendrawtx(rpc, tx):
+def sendraw(rpc, tx):
     return rpc.call('sendrawtransaction', tx)
 
 
@@ -150,7 +167,7 @@ def main():
     subparsers = parser.add_subparsers(dest='command')
     
     parser_usersubaccounts = subparsers.add_parser("usersubaccounts", help="Get user subaccounts")
-    parser_useraddress = subparsers.add_parser("useraddress", help="Get user address and import it in the node as a watch only")
+    parser_useraddress = subparsers.add_parser("useraddress", help="Get user address and import as watch only for the node")
     parser_userutxos = subparsers.add_parser("userutxos", help="Get user utxos")
  
     parser_nodeutxos = subparsers.add_parser("nodeutxos", help="Get node utxos")
@@ -166,13 +183,13 @@ def main():
     parser_usersign.add_argument('--pset', required=True)
     parser_usersign.add_argument('--blinding-nonces', help='Must be specified if signing inputs from AMP subaccounts. BLINDINGNONCE,BLINDINGNONCE,... a blinding nonce might be empty if the output is unblinded')
 
-    parser_combinepset = subparsers.add_parser("combinepset", help="Combine PSETs")
-    parser_combinepset.add_argument('--pset', required=True, action='append')
+    parser_combine = subparsers.add_parser("combine", help="Combine PSETs")
+    parser_combine.add_argument('--pset', required=True, action='append')
     
-    parser_finalizepset = subparsers.add_parser("finalizepset", help="Finalize a PSET")
-    parser_finalizepset.add_argument('--pset', required=True)
+    parser_finalize = subparsers.add_parser("finalize", help="Finalize a PSET")
+    parser_finalize.add_argument('--pset', required=True)
 
-    parser_sendrawtx = subparsers.add_parser("sendrawtx", help="Send a raw transaction")
+    parser_sendrawtx = subparsers.add_parser("send", help="Send a raw transaction")
     parser_sendrawtx.add_argument('--tx', required=True)
 
     args = parser.parse_args()
@@ -195,16 +212,20 @@ def main():
     elif args.command == 'nodesign':
         rpc = get_rpc(args.node_url)
         pp(node_sign(rpc, args.pset))
-    elif args.command == 'combinepset':
+    elif args.command == 'usersign':
+        s = login(args.mnemonic)
+        rpc = get_rpc(args.node_url)
+        pp(user_sign(s, args.subaccount, args.pset, args.blinding_nonces))
+    elif args.command == 'combine':
         # TODO: test
         rpc = get_rpc(args.node_url)
-        pp(combine_pset(rpc, args.pset))
-    elif args.command == 'finalizepset':
+        pp(combine(rpc, args.pset))
+    elif args.command == 'finalize':
         rpc = get_rpc(args.node_url)
-        pp(finalize_pset(rpc, args.pset))
-    elif args.command == 'sendrawtx':
+        pp(finalize(rpc, args.pset))
+    elif args.command == 'send':
         rpc = get_rpc(args.node_url)
-        pp(sendrawtx(rpc, args.tx))
+        pp(sendraw(rpc, args.tx))
 
 if __name__ == "__main__":
     main()
