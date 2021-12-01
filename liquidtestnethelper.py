@@ -58,6 +58,7 @@ def user_sign(session, subaccount, pset, blinding_nonces_str):
     if blinding_nonces_str:
         details['blinding_nonces'] = blinding_nonces_str.split(',')
     return session.sign_psbt(details).resolve()
+    #return session.psbt_sign(details).resolve()
 
 # copied from TODO
 class RPCHost(object):
@@ -217,7 +218,6 @@ def main():
         rpc = get_rpc(args.node_url)
         pp(user_sign(s, args.subaccount, args.pset, args.blinding_nonces))
     elif args.command == 'combine':
-        # TODO: test
         rpc = get_rpc(args.node_url)
         pp(combine(rpc, args.pset))
     elif args.command == 'finalize':

@@ -16,3 +16,5 @@ Run script
 ```
 python liquidtestnethelper.py --help
 ```
+
+An transaction partially signed by GDK, https://blockstream.info/liquidtestnet/tx/f2bc1d168883ef089fd033a289f5c69413b3ba58f89503f4aabfb072a5e3d380?expand

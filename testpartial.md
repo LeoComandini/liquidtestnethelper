@@ -115,19 +115,18 @@ User signs:
 PSETUSER=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL usersign --pset $PSET  --blinding-nonces $BLINDINGNONCES | jq -r .psbt)
 ```
 
-### BLOCKED HERE until Liquid Testnet is live
-
 Node combines:
 ```
-PSETCOMB=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL combine --pset $PSETNODE --pset $PSETUSER | jq -r)
+PSETCOMB=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL combine --pset $PSETNODE --pset $PSETUSER | jq -r .)
 ```
 
 Node finalizes:
 ```
-TXFINAL=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL finalize --pset $PSETCOMB | jq -r)
+TXFINAL=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL finalize --pset $PSETCOMB | jq -r .)
 ```
 
 Broadcast:
 ```
-TXFINAL=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL send --tx $TXFINAL | jq -r)
+TXID=$(python liquidtestnethelper.py -m "$MNEMONIC" -s $SUBACCOUNT -n $NODEURL send --tx $TXFINAL | jq -r .)
+echo $TXID
 ```
