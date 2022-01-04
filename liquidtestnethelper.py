@@ -57,8 +57,7 @@ def user_sign(session, subaccount, pset, blinding_nonces_str):
     details = {"psbt": pset, "utxos": utxos}
     if blinding_nonces_str:
         details['blinding_nonces'] = blinding_nonces_str.split(',')
-    return session.sign_psbt(details).resolve()
-    #return session.psbt_sign(details).resolve()
+    return session.psbt_sign(details).resolve()
 
 # copied from TODO
 class RPCHost(object):
